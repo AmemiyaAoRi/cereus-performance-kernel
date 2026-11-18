@@ -32,14 +32,20 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
 
-      - name: Set up legacy Python 2.7 for MediaTek DrvGen
-        uses: actions/setup-python@v5
-        with:
-          python-version: '2.7'
-
-      - name: Verify Python 2 runtime
+      - name: Build legacy Python 2.7.18 for MediaTek DrvGen
         run: |
           set -euo pipefail
+          PYTHON_TARBALL="$RUNNER_TEMP/Python-2.7.18.tgz"
+          curl --fail --location --retry 3 \
+            https://www.python.org/ftp/python/2.7.18/Python-2.7.18.tgz \
+            --output "$PYTHON_TARBALL"
+          tar -xzf "$PYTHON_TARBALL" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/Python-2.7.18"
+          CFLAGS="-O2 -fcommon -Wno-error=implicit-function-declaration" \
+            ./configure --prefix=/opt/python2.7 --enable-unicode=ucs4
+          make -j2
+          sudo make install
+          sudo ln -sf /opt/python2.7/bin/python2.7 /usr/local/bin/python2
           python2 --version
           python2 -c "import xml.dom.minidom; print('Python 2 XML support: OK')"
 
