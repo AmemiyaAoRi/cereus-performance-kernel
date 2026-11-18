@@ -1,0 +1,95 @@
+name: Redmi 6 (cereus) ARM32 Kernel Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 4.9.117-p_arm_gcc-linaro-7.5.0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cereus-kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Stock ARM32 baseline
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bc bison build-essential flex libelf-dev libssl-dev wget xz-utils
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Download Linaro GCC 7.5.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/gcc-linaro-7.5.0.tar.xz"
+          url="https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/arm-eabi/gcc-linaro-7.5.0-2019.12-x86_64_arm-eabi.tar.xz"
+          wget --https-only --tries=3 --timeout=30 -O "$archive" "$url"
+          mkdir -p "$RUNNER_TEMP/toolchain"
+          tar -xJf "$archive" -C "$RUNNER_TEMP/toolchain"
+          toolchain_dir="$(find "$RUNNER_TEMP/toolchain" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          echo "$toolchain_dir/bin" >> "$GITHUB_PATH"
+          "$toolchain_dir/bin/arm-eabi-gcc" --version
+
+      - name: Configure cereus ARM32 kernel
+        run: |
+          set -euo pipefail
+          make O=out ARCH=arm cereus_defconfig
+          grep -q '^CONFIG_MACH_MT6765=y$' out/.config
+          grep -q '^CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE=y$' out/.config
+          grep -E '^(CONFIG_CROSS_COMPILE|CONFIG_MACH_MT6765|CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE|CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE_NAMES)=' out/.config
+
+      - name: Build kernel and appended DTB
+        shell: bash
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" O=out ARCH=arm zImage-dtb 2>&1 | tee kernel-build.log
+
+      - name: Collect build outputs
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cp -f out/.config artifacts/kernel.config 2>/dev/null || true
+          cp -f out/System.map artifacts/System.map 2>/dev/null || true
+          cp -f kernel-build.log artifacts/ 2>/dev/null || true
+          cp -f out/arch/arm/boot/zImage-dtb artifacts/ 2>/dev/null || true
+          cp -f out/arch/arm/boot/zImage artifacts/ 2>/dev/null || true
+          if [ -d out/arch/arm/boot/dts ]; then
+            find out/arch/arm/boot/dts -type f \( -name '*.dtb' -o -name '*.dtbo' \) -exec cp --parents '{}' artifacts/ \;
+          fi
+          {
+            echo "Repository: $GITHUB_REPOSITORY"
+            echo "Commit: $GITHUB_SHA"
+            echo "Branch: $GITHUB_REF_NAME"
+            echo "Architecture: ARM32 (ARCH=arm)"
+            echo "Defconfig: cereus_defconfig"
+            echo "Compiler: Linaro GCC 7.5.0-2019.12 (arm-eabi-)"
+            echo "Target: zImage-dtb"
+            echo "Build date UTC: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            df -h /
+            if [ -f artifacts/zImage-dtb ]; then sha256sum artifacts/zImage-dtb; file artifacts/zImage-dtb; else echo "zImage-dtb not produced"; fi
+          } > artifacts/build-info.txt
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cereus-arm32-stock-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
