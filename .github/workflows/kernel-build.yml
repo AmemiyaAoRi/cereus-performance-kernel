@@ -38,40 +38,18 @@ jobs:
           set -euo pipefail
           archive="$RUNNER_TEMP/gcc-linaro-7.5.0.tar.xz"
           expected_md5="7b4611b818ac021781609b8710006d0b"
-          urls=(
-            "https://developer.arm.com/-/media/Files/downloads/gnu-a/7.5-2019.12/binrel/gcc-linaro-7.5.0-2019.12-x86_64_arm-eabi.tar.xz"
-            "https://armkeil.blob.core.windows.net/developer/Files/downloads/legacy-linaro/7.5-2019.12/binrel/gcc-linaro-7.5.0-2019.12-x86_64_arm-eabi.tar.xz"
-            "https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-a/7.5-2019.12/binrel/gcc-linaro-7.5.0-2019.12-x86_64_arm-eabi.tar.xz"
-            "https://releases.linaro.org/components/toolchain/binaries/latest-7/arm-eabi/gcc-linaro-7.5.0-2019.12-x86_64_arm-eabi.tar.xz"
-          )
+          url="https://developer.arm.com/-/cdn-downloads/permalink/legacy-linaro-gnu-toolchains/7.5-2019.12/gcc-linaro-7.5.0-2019.12-x86_64_arm-eabi.tar.xz"
 
-          downloaded=false
-          for url in "${urls[@]}"; do
-            echo "Trying toolchain source: $url"
-            rm -f "$archive"
-            if curl --fail --location --show-error --retry 2 --connect-timeout 30 --max-time 1800 --output "$archive" "$url"; then
-              size="$(stat -c '%s' "$archive")"
-              echo "Downloaded $size bytes"
-              if [ "$size" -gt 200000000 ] && xz --test "$archive" >/dev/null 2>&1; then
-                actual_md5="$(md5sum "$archive" | awk '{print $1}')"
-                if [ "$actual_md5" = "$expected_md5" ]; then
-                  echo "Archive size, XZ integrity, and official MD5 all verified."
-                  downloaded=true
-                  break
-                fi
-                echo "Checksum mismatch from $url (got $actual_md5); rejecting file."
-              else
-                echo "Response is not a valid full-size XZ archive; rejecting file."
-              fi
-            else
-              echo "Source unavailable; trying next official endpoint."
-            fi
-          done
+          echo "Downloading GCC 7.5.0 from Arm's official legacy Linaro permalink..."
+          curl --fail --location --show-error --retry 3 --retry-all-errors --connect-timeout 30 --max-time 1800 \
+            --output "$archive" "$url"
 
-          if [ "$downloaded" != true ]; then
-            echo "::error::Could not obtain a checksum-verified Linaro GCC 7.5.0 archive from the listed official endpoints."
-            exit 1
-          fi
+          size="$(stat -c '%s' "$archive")"
+          echo "Downloaded $size bytes"
+          test "$size" -gt 200000000
+          file "$archive"
+          xz --test "$archive"
+          printf '%s  %s\n' "$expected_md5" "$archive" | md5sum --check
 
           mkdir -p "$RUNNER_TEMP/toolchain"
           tar -xJf "$archive" -C "$RUNNER_TEMP/toolchain"
