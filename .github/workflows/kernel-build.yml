@@ -32,6 +32,17 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
 
+      - name: Set up legacy Python 2.7 for MediaTek DrvGen
+        uses: actions/setup-python@v5
+        with:
+          python-version: '2.7'
+
+      - name: Verify Python 2 runtime
+        run: |
+          set -euo pipefail
+          python2 --version
+          python2 -c "import xml.dom.minidom; print('Python 2 XML support: OK')"
+
       - name: Download and verify Linaro GCC 7.5.0
         shell: bash
         run: |
